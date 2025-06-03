@@ -1,0 +1,165 @@
+﻿@{
+    ViewData["Title"] = "Continuous Recording on Noise Detection with Motion Detection";
+}
+
+<h2>Recording on Noise and Motion Detection</h2>
+
+<video id="video" width="640" height="480" autoplay></video>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/RecordRTC/5.6.1/RecordRTC.js"></script>
+<script>
+    let recorder;
+    let videoElement = document.getElementById('video');
+    let audioContext;
+    let analyser;
+    let microphone;
+    let recording = false;
+    let recordingTimeout;
+    let lastFrameData;
+    const motionThreshold = 100; // Adjust this value to set the motion sensitivity
+
+    // Define the canvas variable in a broader scope
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    // Access the camera and microphone
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .then(stream => {
+            videoElement.srcObject = stream;
+            recorder = RecordRTC(stream, {
+                type: 'video'
+            });
+
+            // Set up audio context for noise detection
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            microphone = audioContext.createMediaStreamSource(stream);
+            analyser = audioContext.createAnalyser();
+            microphone.connect(analyser);
+            analyser.fftSize = 2048;
+
+            // Start detecting noise and motion
+            detectNoise();
+            detectMotion();
+        })
+        .catch(error => {
+            console.error("Error accessing media devices.", error);
+        });
+
+    videoElement.addEventListener('loadedmetadata', () => {
+        // Set the canvas dimensions when the video metadata is loaded
+        canvas.width = videoElement.videoWidth;
+        canvas.height = videoElement.videoHeight;
+    });
+
+    function detectNoise() {
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        const threshold = 10; // Adjust this value to set the noise sensitivity
+
+        function checkForNoise() {
+            analyser.getByteFrequencyData(dataArray);
+            const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
+
+            if (average > threshold && !recording) {
+                console.log("Noise detected, threshold = " + threshold);
+                startRecording();
+            }
+
+            requestAnimationFrame(checkForNoise);
+        }
+
+        checkForNoise();
+    }
+
+    function detectMotion() {
+        function checkForMotion() {
+            // Ensure the canvas dimensions are set before drawing
+            if (canvas.width === 0 || canvas.height === 0) {
+                return; // Exit if dimensions are not set
+            }
+
+            context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+            const currentFrameData = context.getImageData(0, 0, canvas.width, canvas.height).data;
+
+            if (lastFrameData) {
+                let motionPixels = 0;
+
+                for (let i = 0; i < currentFrameData.length; i += 4) {
+                    const rDiff = Math.abs(currentFrameData[i] - lastFrameData[i]);
+                    const gDiff = Math.abs(currentFrameData[i + 1] - lastFrameData[i + 1]);
+                    const bDiff = Math.abs(currentFrameData[i + 2] - lastFrameData[i + 2]);
+                    const brightnessDiff = (rDiff + gDiff + bDiff) / 3;
+
+                    if (brightnessDiff > motionThreshold) {
+                        motionPixels++;
+                    }
+                }
+
+                if (motionPixels > 1000 && !recording) { // Adjust the pixel count threshold as needed
+                    console.log("Motion detected, pixels = " + motionPixels);
+                    startRecording();
+                }
+            }
+
+            lastFrameData = currentFrameData;
+            requestAnimationFrame(checkForMotion);
+        }
+
+        checkForMotion();
+    }
+
+    function startRecording() {
+        recorder.startRecording();
+        recording = true;
+        console.log("Recording started...");
+
+        // Set a timeout to stop recording after 1 minute (60,000 milliseconds)
+        recordingTimeout = setTimeout(stopRecording, 60000);
+    }
+
+    function stopRecording() {
+        if (recording) {
+            recorder.stopRecording(() => {
+                let blob = recorder.getBlob();
+                console.log("Blob size: ", blob.size); // Log the size of the blob
+                if (blob.size === 0) {
+                    console.error("Recording is empty.");
+                    return; // Exit if the blob is empty
+                }
+                let timestamp = new Date().toISOString().replace(/[:.]/g, '-'); // Format timestamp
+                let filename = `recording-${timestamp}.webm`; // Create filename with timestamp
+
+                // Send the blob to the server
+                let formData = new FormData();
+                formData.append('file', blob, filename);
+
+                fetch('/Home/SaveRecording?filename=' + encodeURIComponent(filename), {
+                    method: 'POST',
+                    body: blob // Use formData to send the blob
+                })
+                .then(response => {
+                    if (response.ok) {
+                        console.log("Recording saved on the server.");
+                    } else {
+                        console.error("Failed to save recording.");
+                    }
+                })
+                .catch(error => {
+                    console.error("Error saving recording:", error);
+                });
+
+                recording = false;
+                clearTimeout(recordingTimeout); // Clear the timeout if recording stops early
+                console.log("Recording stopped.");
+
+                // Restart noise and motion detection after stopping the recording
+                detectNoise();
+                detectMotion();
+            });
+        }
+    }
+
+
+
+
+
+</script>
