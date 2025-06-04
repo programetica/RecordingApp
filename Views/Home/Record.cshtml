@@ -4,6 +4,16 @@
 
 <h2>Recording on Noise and Motion Detection</h2>
 
+<label for="noiseThreshold">Noise Sensitivity:</label>
+<input type="number" id="noiseThreshold" value="30" min="0" step="1">
+<br>
+<label for="motionThreshold">Motion Sensitivity:</label>
+<input type="number" id="motionThreshold" value="80" min="0" step="1">
+<br>
+<button id="applySettings">Apply Settings</button>
+<br>
+<br>
+
 <video id="video" width="640" height="480" autoplay></video>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/RecordRTC/5.6.1/RecordRTC.js"></script>
@@ -16,7 +26,8 @@
     let recording = false;
     let recordingTimeout;
     let lastFrameData;
-    const motionThreshold = 100; // Adjust this value to set the motion sensitivity
+    let noiseThreshold = 30; // Default noise sensitivity
+    let motionThreshold = 80; // Default motion sensitivity
 
     // Define the canvas variable in a broader scope
     const canvas = document.createElement('canvas');
@@ -53,14 +64,13 @@
 
     function detectNoise() {
         const dataArray = new Uint8Array(analyser.frequencyBinCount);
-        const threshold = 10; // Adjust this value to set the noise sensitivity
 
         function checkForNoise() {
             analyser.getByteFrequencyData(dataArray);
             const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
 
-            if (average > threshold && !recording) {
-                console.log("Noise detected, threshold = " + threshold);
+            if (average > noiseThreshold && !recording) {
+                console.log("Noise detected, threshold = " + noiseThreshold);
                 startRecording();
             }
 
@@ -158,8 +168,11 @@
         }
     }
 
-
-
-
-
+    // Event listener for applying user settings
+    document.getElementById('applySettings').addEventListener('click', () => {
+        noiseThreshold = parseInt(document.getElementById('noiseThreshold').value, 10);
+        motionThreshold = parseInt(document.getElementById('motionThreshold').value, 10);
+        console.log("Settings applied: Noise Threshold = " + noiseThreshold + ", Motion Threshold = " + motionThreshold);
+    });
 </script>
+
